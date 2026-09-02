@@ -152,6 +152,11 @@ def find_duplicate_document(case_record, filename):
 
 
 def create_case(data):
+    # AI Case Summary and AI Recommended Action are left out on purpose —
+    # they read as native Airtable AI fields (computed from other fields in
+    # the record, same idea as the autonumber Case ID), which the API can't
+    # set directly. If they're configured to reference the linked Documents,
+    # Airtable computes them itself once a document is linked.
     fields = {
         "Employee Name": data.get("employee_name"),
         "Employer": data.get("employer"),
@@ -159,17 +164,21 @@ def create_case(data):
         "Incident Date": data.get("incident_date"),
         "Incident Description": data.get("incident_description") or data.get("summary"),
         "Case Status": "New",
-        "AI Case Summary": data.get("summary"),
-        "AI Recommended Action": data.get("recommended_action"),
     }
     return cases_table.create(fields, typecast=True)
 
 
+def attach_pdf_to_document(doc_id, uploaded_file):
+    documents_table.upload_attachment(
+        doc_id,
+        "Document",
+        filename=uploaded_file.name,
+        content=uploaded_file.getvalue(),
+        content_type="application/pdf",
+    )
+
+
 def create_document_record(data, extracted_text, missing, case_id):
-    # NOTE: not attaching the actual PDF file itself yet (the "Document"
-    # attachment field) — that's a separate upload call, deferred so this
-    # step doesn't also depend on confirming pyairtable's attachment-upload
-    # support. The extraction output is what's saved here.
     fields = {
         "Document Type": data.get("document_type"),
         "Extraction Status": "Complete" if not missing else "Needs Review",
@@ -258,6 +267,16 @@ if uploaded_files:
                         st.session_state[file_key]["matches"] = find_matching_cases(data)
 
                     matches = st.session_state[file_key]["matches"]
+                    with st.expander("Match search (debug)"):
+                        st.write("Searched for Employee Name:", repr(data.get("employee_name")))
+                        st.write("Searched for Employer:", repr(data.get("employer")))
+                        st.write(f"{len(matches)} case(s) found")
+                        for m in matches:
+                            st.write(
+                                repr(m["fields"].get("Employee Name")),
+                                "/",
+                                repr(m["fields"].get("Employer")),
+                            )
                     case_choice_id = None
 
                     if len(matches) == 1:
@@ -298,7 +317,8 @@ if uploaded_files:
                                 "case — not saving a duplicate."
                             )
                         else:
-                            create_document_record(data, extracted_text, missing, case_id)
+                            doc_record = create_document_record(data, extracted_text, missing, case_id)
+                            attach_pdf_to_document(doc_record["id"], uploaded_file)
                             st.session_state[file_key]["saved"] = True
                             st.rerun()
 
