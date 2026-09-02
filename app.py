@@ -1,3 +1,35 @@
+import json
+import streamlit as st
+from pypdf import PdfReader
+from anthropic import Anthropic
+
+st.set_page_config(
+    page_title="CaseFlow AI",
+    page_icon="📄",
+    layout="wide"
+)
+
+st.title("CaseFlow AI")
+st.subheader("AI-powered claims intake and validation")
+
+client = Anthropic(
+    api_key=st.secrets["ANTHROPIC_API_KEY"]
+)
+
+
+def extract_pdf_text(uploaded_file):
+    reader = PdfReader(uploaded_file)
+    text = ""
+
+    for page in reader.pages:
+        page_text = page.extract_text()
+
+        if page_text:
+            text += page_text + "\n"
+
+    return text
+
+
 def analyze_document(text):
     prompt = f"""
 You are an AI document intake system for internal operations teams.
@@ -66,7 +98,66 @@ Rules:
 
     try:
         return json.loads(response_text)
+
     except json.JSONDecodeError:
         raise ValueError(
             f"AI returned a response that was not valid JSON: {response_text}"
         )
+
+
+uploaded_files = st.file_uploader(
+    "Upload claim documents",
+    type=["pdf"],
+    accept_multiple_files=True
+)
+
+
+if uploaded_files:
+
+    st.success(f"{len(uploaded_files)} document(s) uploaded")
+
+    for uploaded_file in uploaded_files:
+
+        st.markdown(f"### {uploaded_file.name}")
+
+        try:
+
+            extracted_text = extract_pdf_text(uploaded_file)
+
+            if not extracted_text.strip():
+                st.warning("No readable text was found in this document.")
+                continue
+
+            st.success("Text extracted successfully")
+
+            with st.expander("View extracted text"):
+                st.text(extracted_text)
+
+            if st.button(
+                "Analyze with AI",
+                key=f"analyze_{uploaded_file.name}"
+            ):
+
+                with st.spinner("Analyzing document..."):
+
+                    structured_data = analyze_document(
+                        extracted_text
+                    )
+
+                st.success("AI analysis complete")
+
+                st.subheader("Extracted Data")
+
+                st.json(structured_data)
+
+        except Exception as e:
+
+            st.error(
+                f"Processing failed: {e}"
+            )
+
+else:
+
+    st.info(
+        "Upload one or more PDF documents to begin."
+    )
