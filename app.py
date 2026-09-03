@@ -318,15 +318,12 @@ if uploaded_files:
                         case_display = case_fields.get("Case ID", matches[0]["id"])
                         emp = case_fields.get("Employee Name", "?")
                         employer = case_fields.get("Employer", "")
-                        existing_docs = case_fields.get("Documents", [])
                         conflicts = find_conflicts(data, matches[0])
 
                         st.markdown(f"**Found existing claim: {case_display}**")
                         st.write(f"- Employee: {emp}")
                         st.write(f"- Employer: {employer or '—'}")
                         st.write(f"- Incident Date on file: {case_fields.get('Incident Date', '—')}")
-                        st.write(f"- Status: {case_fields.get('Case Status', '—')}")
-                        st.write(f"- Documents already on file: {len(existing_docs)}")
 
                         if conflicts:
                             st.warning(
