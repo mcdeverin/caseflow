@@ -306,13 +306,11 @@ def attach_pdf_to_document(doc_id, uploaded_file):
     )
 
 
-def create_document_record(data, extracted_text, missing, case_id, submitter_name):
+def create_document_record(data, extracted_text, case_id, submitter_name):
     fields = {
         "Document Type": data.get("document_type"),
-        "Extraction Status": "Complete" if not missing else "Needs Review",
         "Extracted Text": extracted_text,
         "Extracted Data": json.dumps(data),
-        "Extraction Notes": f"Missing: {', '.join(missing)}" if missing else "",
         "Extraction summary": data.get("summary"),
         "Insurance Carrier": data.get("insurance_carrier"),
         "Policy Number": data.get("policy_number"),
@@ -472,7 +470,7 @@ if uploaded_files:
                             )
                         else:
                             doc_record = create_document_record(
-                                data, extracted_text, missing, case_id, submitter_name
+                                data, extracted_text, case_id, submitter_name
                             )
                             attach_pdf_to_document(doc_record["id"], uploaded_file)
                             update_case_review_state(case_id)
