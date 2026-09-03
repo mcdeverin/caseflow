@@ -45,6 +45,13 @@ CASE_LEVEL_REQUIRED = [
     "supervisor_name",
 ]
 
+# Document types this tool is actually scoped to. Anything else — Claude
+# classifies as "Other" — doesn't belong in a workers' comp pipeline at all,
+# and shouldn't be asked to satisfy PER_DOCUMENT_REQUIRED (an incident_date
+# requirement makes no sense for a document that was never about an
+# incident, like a benefits dependent-verification form).
+CLAIMS_DOCUMENT_TYPES = {"Incident Report", "Medical Provider Note", "Witness Statement", "Timecard"}
+
 
 def extract_pdf_text(uploaded_file):
     reader = PdfReader(uploaded_file)
@@ -83,7 +90,9 @@ Return ONLY valid JSON using this structure:
 }}
 
 Instructions:
-1. Identify which of the document types above this is (or "Other" if none fit).
+1. Identify which of these document types this is — use this exact casing:
+   "Incident Report", "Medical Provider Note", "Witness Statement",
+   "Timecard", or "Other". Do not invent a different label or casing.
 2. Extract employee name and employer when present.
 3. Extract the incident date this document relates to, when present.
 4. Extract incident_location, incident_description, injury_type, body_area,
@@ -137,6 +146,22 @@ def find_matching_cases(data):
     if employer:
         criteria["Employer"] = employer
     return cases_table.all(formula=match(criteria))
+
+
+def find_conflicts(data, case_record):
+    """Compares this document's incident_date against what's already on the
+    matched case. Deliberately limited — injury_type, body_area, etc. only
+    exist on Documents, not rolled up to a Case-level column, so they can't
+    be compared this way without a schema change. Also note: no date-format
+    normalization here, so 'August 11, 2026' vs '2026-08-11' would falsely
+    read as a conflict even when they're the same date — a real version
+    would need to parse both into a common format first."""
+    conflicts = []
+    new_date = (data.get("incident_date") or "").strip()
+    existing_date = str(case_record.get("fields", {}).get("Incident Date") or "").strip()
+    if new_date and existing_date and new_date != existing_date:
+        conflicts.append(f"Incident Date — this document says \"{new_date}\", case has \"{existing_date}\"")
+    return conflicts
 
 
 def find_duplicate_document(case_record, filename):
@@ -231,6 +256,15 @@ if uploaded_files:
                 st.subheader("Extracted Data")
                 st.json(data)
 
+                if data.get("document_type") not in CLAIMS_DOCUMENT_TYPES:
+                    st.error(
+                        f"This doesn't look like a workers' comp claims document "
+                        f"(classified as: {data.get('document_type') or 'Other'}). "
+                        "This tool is scoped to Claims intake only — "
+                        f"{data.get('recommended_action') or 'route it to the appropriate team instead.'}"
+                    )
+                    continue
+
                 missing = check_completeness(data)
 
                 if not st.session_state[file_key]["reviewed"]:
@@ -282,7 +316,16 @@ if uploaded_files:
                     if len(matches) == 1:
                         case_choice_id = matches[0]["id"]
                         emp = matches[0]["fields"].get("Employee Name", "?")
-                        st.info(f"Matches an existing case for {emp} — will link to it.")
+                        conflicts = find_conflicts(data, matches[0])
+                        if conflicts:
+                            st.warning(
+                                f"Matches an existing case for {emp}, but found a conflict "
+                                "with what's already on file — will still link, review before "
+                                "treating this as resolved:\n\n"
+                                + "\n".join(f"- {c}" for c in conflicts)
+                            )
+                        else:
+                            st.info(f"Matches an existing case for {emp} — will link to it.")
 
                     elif len(matches) == 0:
                         case_choice_id = "NEW"
