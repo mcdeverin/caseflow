@@ -143,10 +143,23 @@ def check_completeness(data):
     return [f for f in PER_DOCUMENT_REQUIRED if not data.get(f)]
 
 
+def _name_tokens(name):
+    """Lowercase, strip punctuation, split into words, return as a set —
+    so 'Kim, Daniel' and 'Daniel Kim' normalize to the same value. This is
+    word-order/punctuation tolerance only, not real fuzzy matching: a
+    nickname or misspelling still won't match."""
+    cleaned = re.sub(r"[^\w\s]", " ", (name or "").lower())
+    return frozenset(cleaned.split())
+
+
 def find_matching_cases(data):
-    """Exact match on Employee Name (+ Employer, if we have one). Not fuzzy —
-    a real version would need to handle typos/nicknames, but exact is the
-    honest starting point rather than guessing at a similarity threshold."""
+    """Two passes. First: exact match on Employee Name (+ Employer, if we
+    have one) — fast and precise. Second, only if the first finds nothing:
+    compare employee names as unordered word sets instead of literal
+    strings, so a formatting difference doesn't silently read as 'no
+    existing claim' when a real candidate exists. Either pass just returns
+    candidates — nothing here auto-links; that decision still happens on
+    the confirmation screen."""
     employee_name = (data.get("employee_name") or "").strip()
     if not employee_name:
         return []
@@ -154,7 +167,24 @@ def find_matching_cases(data):
     employer = (data.get("employer") or "").strip()
     if employer:
         criteria["Employer"] = employer
-    return cases_table.all(formula=match(criteria))
+    exact_matches = cases_table.all(formula=match(criteria))
+    if exact_matches:
+        return exact_matches
+
+    # Nothing exact — try a broader pass instead of concluding "no claim
+    # exists." Scope to the same employer when we have one, to keep this
+    # from comparing against every case in the base.
+    target_tokens = _name_tokens(employee_name)
+    if not target_tokens:
+        return []
+    candidate_pool = (
+        cases_table.all(formula=match({"Employer": employer})) if employer
+        else cases_table.all()
+    )
+    return [
+        c for c in candidate_pool
+        if _name_tokens(c["fields"].get("Employee Name")) == target_tokens
+    ]
 
 
 def find_conflicts(data, case_record):
