@@ -85,6 +85,9 @@ Return ONLY valid JSON using this structure:
     "injury_type": null,
     "body_area": null,
     "supervisor_name": null,
+    "insurance_carrier": null,
+    "policy_number": null,
+    "estimated_cost": null,
     "summary": null,
     "recommended_action": null
 }}
@@ -99,8 +102,14 @@ Instructions:
    and supervisor_name only when THIS document actually states them. A
    witness statement or timecard may legitimately have most of these as
    null — that is expected, not a failure.
-5. Write a concise factual summary of the document.
-6. Suggest one brief recommended next action for a human reviewer.
+5. Extract insurance_carrier and policy_number only if this document
+   explicitly names the workers' comp insurance carrier or policy number —
+   most documents won't, and that's fine.
+6. Extract estimated_cost only if this document states an actual dollar
+   figure (a bill total, a cost estimate, a reserve amount). Do not
+   calculate or guess a cost from other details.
+7. Write a concise factual summary of the document.
+8. Suggest one brief recommended next action for a human reviewer.
 
 Rules:
 - Never invent information.
@@ -342,7 +351,7 @@ if uploaded_files:
                         )
                         case_choice_id = options[label]
 
-                    if st.button("Save to Airtable", key=f"save_{file_key}"):
+                    if st.button("Save Claim", key=f"save_{file_key}"):
                         if case_choice_id == "NEW":
                             case_id = create_case(data)["id"]
                             dup_id = None
@@ -363,9 +372,15 @@ if uploaded_files:
                             st.rerun()
 
                 if st.session_state[file_key]["saved"]:
-                    st.success("Saved to Airtable.")
+                    st.success("Claim saved.")
 
+        except json.JSONDecodeError as e:
+            st.error(
+                "The AI's response for this document wasn't valid structured "
+                "data, so nothing was saved. This can happen with unusual "
+                f"document formatting. Technical detail: {e}"
+            )
         except Exception as e:
-            st.error(f"Processing failed: {e}")
+            st.error(f"Something went wrong processing this document, and nothing was saved: {e}")
 else:
     st.info("Upload one or more PDF documents to begin.")
