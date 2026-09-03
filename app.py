@@ -254,6 +254,48 @@ def create_case(data):
     return cases_table.create(fields, typecast=True)
 
 
+def compute_case_missing(case_id):
+    """Checks CASE_LEVEL_REQUIRED against every document already linked to
+    this case, not just the one just saved — a field counts as present if
+    ANY linked document supplied it, so a multi-document case can be
+    complete even if no single document is."""
+    case_record = cases_table.get(case_id)
+    doc_ids = case_record.get("fields", {}).get("Documents", [])
+    known = {}
+    for doc_id in doc_ids:
+        doc = documents_table.get(doc_id)
+        raw = doc.get("fields", {}).get("Extracted Data")
+        if not raw:
+            continue
+        try:
+            doc_data = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        for field in CASE_LEVEL_REQUIRED:
+            if doc_data.get(field) and not known.get(field):
+                known[field] = doc_data[field]
+    return [f for f in CASE_LEVEL_REQUIRED if not known.get(f)]
+
+
+def update_case_review_state(case_id):
+    """Recomputes Missing Information / AI Review Status from every document
+    currently linked to the case. Also advances Case Status from 'New' to
+    'Ready for Review' once intake is genuinely complete — but ONLY from
+    'New' specifically, never overwriting a status a person has since moved
+    forward (Approved, Denied, Closed, etc.). This tool marks the intake
+    handoff point; it doesn't make claims decisions."""
+    case_missing = compute_case_missing(case_id)
+    fields = {
+        "Missing Information": ", ".join(case_missing) if case_missing else "",
+        "AI Review Status": "Needs Review" if case_missing else "Complete",
+    }
+    if not case_missing:
+        case_record = cases_table.get(case_id)
+        if case_record.get("fields", {}).get("Case Status") == "New":
+            fields["Case Status"] = "Ready for Review"
+    cases_table.update(case_id, fields, typecast=True)
+
+
 def attach_pdf_to_document(doc_id, uploaded_file):
     documents_table.upload_attachment(
         doc_id,
@@ -264,7 +306,7 @@ def attach_pdf_to_document(doc_id, uploaded_file):
     )
 
 
-def create_document_record(data, extracted_text, missing, case_id):
+def create_document_record(data, extracted_text, missing, case_id, submitter_name):
     fields = {
         "Document Type": data.get("document_type"),
         "Extraction Status": "Complete" if not missing else "Needs Review",
@@ -272,22 +314,20 @@ def create_document_record(data, extracted_text, missing, case_id):
         "Extracted Data": json.dumps(data),
         "Extraction Notes": f"Missing: {', '.join(missing)}" if missing else "",
         "Extraction summary": data.get("summary"),
-        "Key entities extracted": ", ".join(
-            filter(None, [
-                f"Witness: {data['witness_name']}" if data.get("witness_name") else None,
-                f"Supervisor: {data['supervisor_name']}" if data.get("supervisor_name") else None,
-            ])
-        ) or "—",
         "Insurance Carrier": data.get("insurance_carrier"),
         "Policy Number": data.get("policy_number"),
         "Estimated Cost": data.get("estimated_cost"),
         "Date Reported": data.get("date_reported"),
         "Average Weekly Wage": data.get("average_weekly_wage"),
         "Witness Name": data.get("witness_name"),
+        "Supervisor Name": data.get("supervisor_name"),
+        "Submitted By": submitter_name or None,
         "Case": [case_id],
     }
     return documents_table.create(fields, typecast=True)
 
+
+submitter_name = st.text_input("Your name (recorded with each document you save)")
 
 uploaded_files = st.file_uploader(
     "Upload claim documents",
@@ -429,8 +469,11 @@ if uploaded_files:
                                 "case — not saving a duplicate."
                             )
                         else:
-                            doc_record = create_document_record(data, extracted_text, missing, case_id)
+                            doc_record = create_document_record(
+                                data, extracted_text, missing, case_id, submitter_name
+                            )
                             attach_pdf_to_document(doc_record["id"], uploaded_file)
+                            update_case_review_state(case_id)
                             st.session_state[file_key]["saved"] = True
                             st.rerun()
 
