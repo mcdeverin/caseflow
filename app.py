@@ -301,16 +301,6 @@ if uploaded_files:
                         st.session_state[file_key]["matches"] = find_matching_cases(data)
 
                     matches = st.session_state[file_key]["matches"]
-                    with st.expander("Match search (debug)"):
-                        st.write("Searched for Employee Name:", repr(data.get("employee_name")))
-                        st.write("Searched for Employer:", repr(data.get("employer")))
-                        st.write(f"{len(matches)} case(s) found")
-                        for m in matches:
-                            st.write(
-                                repr(m["fields"].get("Employee Name")),
-                                "/",
-                                repr(m["fields"].get("Employer")),
-                            )
                     case_choice_id = None
 
                     if len(matches) == 1:
