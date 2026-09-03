@@ -325,13 +325,6 @@ if uploaded_files:
                         st.write(f"- Employer: {employer or '—'}")
                         st.write(f"- Incident Date on file: {case_fields.get('Incident Date', '—')}")
 
-                        if conflicts:
-                            st.warning(
-                                "This document conflicts with what's on file:\n\n"
-                                + "\n".join(f"- {c}" for c in conflicts)
-                                + "\n\nDecide below whether this is still the same claim."
-                            )
-
                         attach_label = f"Attach to existing claim {case_display}"
                         choice = st.radio(
                             "What should happen with this document?",
