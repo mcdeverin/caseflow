@@ -42,7 +42,9 @@ CASE_LEVEL_REQUIRED = [
     "incident_description",
     "injury_type",
     "body_area",
+    "cause_of_incident",
     "supervisor_name",
+    "average_weekly_wage",
 ]
 
 # Document types this tool is actually scoped to. Anything else — Claude
@@ -80,11 +82,15 @@ Return ONLY valid JSON using this structure:
     "employee_name": null,
     "employer": null,
     "incident_date": null,
+    "date_reported": null,
     "incident_location": null,
     "incident_description": null,
+    "cause_of_incident": null,
     "injury_type": null,
     "body_area": null,
     "supervisor_name": null,
+    "witness_name": null,
+    "average_weekly_wage": null,
     "insurance_carrier": null,
     "policy_number": null,
     "estimated_cost": null,
@@ -97,19 +103,34 @@ Instructions:
    "Incident Report", "Medical Provider Note", "Witness Statement",
    "Timecard", or "Other". Do not invent a different label or casing.
 2. Extract employee name and employer when present.
-3. Extract the incident date this document relates to, when present.
+3. Extract incident_date (when the injury happened) and date_reported (when
+   it was reported/filed) as separate fields when the document states them
+   separately — these are often different dates, and the gap between them
+   matters for compliance. If the document only gives one date, use your
+   judgment on which field it belongs to based on context.
 4. Extract incident_location, incident_description, injury_type, body_area,
    and supervisor_name only when THIS document actually states them. A
    witness statement or timecard may legitimately have most of these as
    null — that is expected, not a failure.
-5. Extract insurance_carrier and policy_number only if this document
+5. Extract witness_name only from a document where someone is giving a
+   statement as a witness to the incident — not the injured employee
+   themselves, not a supervisor filing a report.
+6. Extract average_weekly_wage only if this document states an actual wage
+   figure (not hours alone) — most documents won't have this, only payroll
+   or wage-statement style documents.
+7. Extract cause_of_incident using one of these exact categories when the
+   document supports it: "Fall", "Struck By/Against", "Overexertion/Lifting",
+   "Repetitive Motion", "Caught In/Between", "Vehicle Incident", "Other".
+   Use null if the document doesn't give enough detail to categorize it —
+   do not guess a category from a vague description.
+8. Extract insurance_carrier and policy_number only if this document
    explicitly names the workers' comp insurance carrier or policy number —
    most documents won't, and that's fine.
-6. Extract estimated_cost only if this document states an actual dollar
+9. Extract estimated_cost only if this document states an actual dollar
    figure (a bill total, a cost estimate, a reserve amount). Do not
    calculate or guess a cost from other details.
-7. Write a concise factual summary of the document.
-8. Suggest one brief recommended next action for a human reviewer.
+10. Write a concise factual summary of the document.
+11. Suggest one brief recommended next action for a human reviewer.
 
 Rules:
 - Never invent information.
@@ -227,6 +248,7 @@ def create_case(data):
         "Claim Type": "Workers Compensation",
         "Incident Date": data.get("incident_date"),
         "Incident Description": data.get("incident_description") or data.get("summary"),
+        "Cause of Incident": data.get("cause_of_incident"),
         "Case Status": "New",
     }
     return cases_table.create(fields, typecast=True)
@@ -250,7 +272,18 @@ def create_document_record(data, extracted_text, missing, case_id):
         "Extracted Data": json.dumps(data),
         "Extraction Notes": f"Missing: {', '.join(missing)}" if missing else "",
         "Extraction summary": data.get("summary"),
-        "Key entities extracted": f"{data.get('employee_name') or '—'} / {data.get('employer') or '—'}",
+        "Key entities extracted": ", ".join(
+            filter(None, [
+                f"Witness: {data['witness_name']}" if data.get("witness_name") else None,
+                f"Supervisor: {data['supervisor_name']}" if data.get("supervisor_name") else None,
+            ])
+        ) or "—",
+        "Insurance Carrier": data.get("insurance_carrier"),
+        "Policy Number": data.get("policy_number"),
+        "Estimated Cost": data.get("estimated_cost"),
+        "Date Reported": data.get("date_reported"),
+        "Average Weekly Wage": data.get("average_weekly_wage"),
+        "Witness Name": data.get("witness_name"),
         "Case": [case_id],
     }
     return documents_table.create(fields, typecast=True)
