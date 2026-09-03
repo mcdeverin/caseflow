@@ -327,7 +327,7 @@ def create_document_record(data, extracted_text, missing, case_id, submitter_nam
     return documents_table.create(fields, typecast=True)
 
 
-submitter_name = st.text_input("Your name (recorded with each document you save)")
+submitter_name = st.text_input("Your Name")
 
 uploaded_files = st.file_uploader(
     "Upload claim documents",
@@ -390,14 +390,16 @@ if uploaded_files:
                                 "Employee Name" + (" ⚠️" if "employee_name" in missing else ""),
                                 value=data.get("employee_name") or "",
                             )
-                            incident_date = st.text_input(
+                            incident_date_value = st.date_input(
                                 "Incident Date" + (" ⚠️" if "incident_date" in missing else ""),
-                                value=data.get("incident_date") or "",
+                                value=None,
                             )
                             submitted = st.form_submit_button("Confirm corrections")
                         if submitted:
                             data["employee_name"] = employee_name
-                            data["incident_date"] = incident_date
+                            data["incident_date"] = (
+                                incident_date_value.isoformat() if incident_date_value else None
+                            )
                             st.session_state[file_key]["data"] = data
                             st.session_state[file_key]["reviewed"] = True
                             st.rerun()
