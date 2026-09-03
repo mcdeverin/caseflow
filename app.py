@@ -314,32 +314,49 @@ if uploaded_files:
                     case_choice_id = None
 
                     if len(matches) == 1:
-                        case_choice_id = matches[0]["id"]
-                        emp = matches[0]["fields"].get("Employee Name", "?")
+                        case_fields = matches[0]["fields"]
+                        case_display = case_fields.get("Case ID", matches[0]["id"])
+                        emp = case_fields.get("Employee Name", "?")
+                        employer = case_fields.get("Employer", "")
+                        existing_docs = case_fields.get("Documents", [])
                         conflicts = find_conflicts(data, matches[0])
+
+                        st.markdown(f"**Found existing claim: {case_display}**")
+                        st.write(f"- Employee: {emp}")
+                        st.write(f"- Employer: {employer or '—'}")
+                        st.write(f"- Incident Date on file: {case_fields.get('Incident Date', '—')}")
+                        st.write(f"- Status: {case_fields.get('Case Status', '—')}")
+                        st.write(f"- Documents already on file: {len(existing_docs)}")
+
                         if conflicts:
                             st.warning(
-                                f"Matches an existing case for {emp}, but found a conflict "
-                                "with what's already on file — will still link, review before "
-                                "treating this as resolved:\n\n"
+                                "This document conflicts with what's on file:\n\n"
                                 + "\n".join(f"- {c}" for c in conflicts)
+                                + "\n\nDecide below whether this is still the same claim."
                             )
-                        else:
-                            st.info(f"Matches an existing case for {emp} — will link to it.")
+
+                        attach_label = f"Attach to existing claim {case_display}"
+                        choice = st.radio(
+                            "What should happen with this document?",
+                            [attach_label, "This is a different claim — create a new one"],
+                            key=f"case_choice_{file_key}",
+                        )
+                        case_choice_id = matches[0]["id"] if choice == attach_label else "NEW"
 
                     elif len(matches) == 0:
                         case_choice_id = "NEW"
-                        st.info("No existing case found for this employee — will create a new one.")
+                        st.info("No existing claim found for this employee — will create a new one.")
 
                     else:
-                        st.warning(f"{len(matches)} existing cases match this employee — pick the right one.")
+                        st.warning(f"{len(matches)} existing claims match this employee — pick the right one.")
                         options = {
                             f"{m['fields'].get('Employee Name', '?')} — "
                             f"{m['fields'].get('Employer', '?')} (…{m['id'][-6:]})": m["id"]
                             for m in matches
                         }
+                        options["None of these — create a new claim"] = "NEW"
                         label = st.selectbox(
-                            "Which case is this document for?",
+                            "Which claim is this document for?",
                             list(options.keys()),
                             key=f"case_pick_{file_key}",
                         )
