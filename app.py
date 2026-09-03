@@ -243,7 +243,7 @@ if uploaded_files:
             with st.expander("View extracted text"):
                 st.text(extracted_text)
 
-            if st.button("Analyze with AI", key=f"analyze_{file_key}"):
+            if st.button("Analyze Claim", key=f"analyze_{file_key}"):
                 with st.spinner("Analyzing document..."):
                     st.session_state[file_key]["data"] = analyze_document(extracted_text)
                     st.session_state[file_key]["reviewed"] = False
@@ -253,8 +253,8 @@ if uploaded_files:
             data = st.session_state[file_key]["data"]
 
             if data:
-                st.subheader("Extracted Data")
-                st.json(data)
+                with st.expander("View extracted data"):
+                    st.json(data)
 
                 if data.get("document_type") not in CLAIMS_DOCUMENT_TYPES:
                     st.error(
